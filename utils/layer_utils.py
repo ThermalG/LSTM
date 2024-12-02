@@ -2,21 +2,14 @@ from __future__ import absolute_import
 import warnings
 
 from keras import backend as K
-from keras import activations
-from keras import initializers
-from keras import regularizers
-from keras import constraints
-from keras.engine import Layer
-from keras.engine import InputSpec
-from keras.legacy import interfaces
-from keras.layers import RNN
+from keras import activations, initializers, regularizers, constraints
+from keras.layers import Layer, InputSpec, RNN
 
 
 def _time_distributed_dense(x, w, b=None, dropout=None,
                             input_dim=None, output_dim=None,
                             timesteps=None, training=None):
     """Apply `y . w + b` for every temporal slice y of x.
-
     # Arguments
         x: input tensor.
         w: weight matrix.
@@ -134,6 +127,7 @@ class AttentionLSTMCell(Layer):
             - [Bahdanau, Cho & Bengio (2014), "Neural Machine Translation by Jointly Learning to Align and Translate"](https://arxiv.org/pdf/1409.0473.pdf)
             - [Xu, Ba, Kiros, Cho, Courville, Salakhutdinov, Zemel & Bengio (2016), "Show, Attend and Tell: Neural Image Caption Generation with Visual Attention"](http://arxiv.org/pdf/1502.03044.pdf)
         """
+
     def __init__(self, units,
                  activation='tanh',
                  recurrent_activation='hard_sigmoid',
@@ -159,7 +153,7 @@ class AttentionLSTMCell(Layer):
                  implementation=1,
                  **kwargs):
         super(AttentionLSTMCell, self).__init__(**kwargs)
-        self.input_spec = [InputSpec(ndim=3)]
+        self.input_spec = [InputSpec(ndim=2)]
         self.units = units
         self.activation = activations.get(activation)
         self.recurrent_activation = activations.get(recurrent_activation)
@@ -192,7 +186,6 @@ class AttentionLSTMCell(Layer):
         self.state_spec = [InputSpec(shape=(None, self.units)),
                            InputSpec(shape=(None, self.units))]
         self.state_size = (self.units, self.units)
-
 
     def build(self, input_shape):
 
@@ -297,7 +290,6 @@ class AttentionLSTMCell(Layer):
 
         self.built = True
 
-
     def _generate_dropout_mask(self, inputs, training=None):
         if 0 < self.dropout < 1:
             ones = K.ones_like(K.squeeze(inputs[:, 0:1, :], axis=1))
@@ -312,7 +304,6 @@ class AttentionLSTMCell(Layer):
                 for _ in range(4)]
         else:
             self._dropout_mask = None
-
 
     def _generate_recurrent_dropout_mask(self, inputs, training=None):
         if 0 < self.recurrent_dropout < 1:
@@ -329,7 +320,6 @@ class AttentionLSTMCell(Layer):
                 for _ in range(4)]
         else:
             self._recurrent_dropout_mask = None
-
 
     def call(self, inputs, states, training=None):
         # dropout matrices for input units
@@ -392,10 +382,14 @@ class AttentionLSTMCell(Layer):
                 h_tm1_f = h_tm1
                 h_tm1_c = h_tm1
                 h_tm1_o = h_tm1
-            i = self.recurrent_activation(x_i + K.dot(h_tm1_i, self.recurrent_kernel_i) + K.dot(z_hat, self.attention_i))
-            f = self.recurrent_activation(x_f + K.dot(h_tm1_f, self.recurrent_kernel_f) + K.dot(z_hat, self.attention_f))
-            c = f * c_tm1 + i * self.activation(x_c + K.dot(h_tm1_c, self.recurrent_kernel_c) + K.dot(z_hat, self.attention_c))
-            o = self.recurrent_activation(x_o + K.dot(h_tm1_o, self.recurrent_kernel_o) + K.dot(z_hat, self.attention_o))
+            i = self.recurrent_activation(
+                x_i + K.dot(h_tm1_i, self.recurrent_kernel_i) + K.dot(z_hat, self.attention_i))
+            f = self.recurrent_activation(
+                x_f + K.dot(h_tm1_f, self.recurrent_kernel_f) + K.dot(z_hat, self.attention_f))
+            c = f * c_tm1 + i * self.activation(
+                x_c + K.dot(h_tm1_c, self.recurrent_kernel_c) + K.dot(z_hat, self.attention_c))
+            o = self.recurrent_activation(
+                x_o + K.dot(h_tm1_o, self.recurrent_kernel_o) + K.dot(z_hat, self.attention_o))
         else:
             if 0. < self.dropout < 1.:
                 inputs *= dp_mask[0]
@@ -425,7 +419,7 @@ class AttentionLSTMCell(Layer):
         return h, [h, c]
 
 
-class AttentionLSTM(RNN):
+class ALSTM(RNN):
     """Long-Short Term Memory unit - with Attention.
 
     # Arguments
@@ -517,7 +511,7 @@ class AttentionLSTM(RNN):
         - [Bahdanau, Cho & Bengio (2014), "Neural Machine Translation by Jointly Learning to Align and Translate"](https://arxiv.org/pdf/1409.0473.pdf)
         - [Xu, Ba, Kiros, Cho, Courville, Salakhutdinov, Zemel & Bengio (2016), "Show, Attend and Tell: Neural Image Caption Generation with Visual Attention"](http://arxiv.org/pdf/1502.03044.pdf)
     """
-    @interfaces.legacy_recurrent_support
+
     def __init__(self, units,
                  activation='tanh',
                  recurrent_activation='hard_sigmoid',
@@ -587,13 +581,13 @@ class AttentionLSTM(RNN):
                                  recurrent_dropout=recurrent_dropout,
                                  return_attention=return_attention,
                                  implementation=implementation)
-        super(AttentionLSTM, self).__init__(cell,
-                                            return_sequences=return_sequences,
-                                            return_state=return_state,
-                                            go_backwards=go_backwards,
-                                            stateful=stateful,
-                                            unroll=unroll,
-                                            **kwargs)
+        super(ALSTM, self).__init__(cell,
+                                    return_sequences=return_sequences,
+                                    return_state=return_state,
+                                    go_backwards=go_backwards,
+                                    stateful=stateful,
+                                    unroll=unroll,
+                                    **kwargs)
         self.return_attention = return_attention
 
     def build(self, input_shape):
@@ -603,10 +597,10 @@ class AttentionLSTM(RNN):
     def call(self, inputs, mask=None, training=None, initial_state=None):
         self.cell._generate_dropout_mask(inputs, training=training)
         self.cell._generate_recurrent_dropout_mask(inputs, training=training)
-        return super(AttentionLSTM, self).call(inputs,
-                                               mask=mask,
-                                               training=training,
-                                               initial_state=initial_state)
+        return super(ALSTM, self).call(inputs,
+                                       mask=mask,
+                                       training=training,
+                                       initial_state=initial_state)
 
     @property
     def units(self):
@@ -719,7 +713,7 @@ class AttentionLSTM(RNN):
                   'dropout': self.dropout,
                   'recurrent_dropout': self.recurrent_dropout,
                   'return_attention': self.return_attention}
-        base_config = super(AttentionLSTM, self).get_config()
+        base_config = super(ALSTM, self).get_config()
         del base_config['cell']
         return dict(list(base_config.items()) + list(config.items()))
 

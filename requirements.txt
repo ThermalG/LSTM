@@ -1,9 +1,11 @@
-tensorflow-gpu>=1.2.0
-keras>=2.0.4
-scipy
-numpy
-pandas
+tensorflow==2.10
+keras == 2.10.0
+scipy~=1.14.1
+numpy~=1.26.4
+pandas~=2.2.2
 scikit-learn>=0.18.2
 h5py
-matplotlib
+matplotlib~=3.10.0rc1
 joblib>=0.12
+tqdm~=4.66.5
+scikit-image~=0.24.0

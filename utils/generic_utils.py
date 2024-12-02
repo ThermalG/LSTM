@@ -1,22 +1,21 @@
+from utils.const import META
 import numpy as np
 import pandas as pd
 import os
-import matplotlib as mpl
-import matplotlib.pylab as plt
+import matplotlib.pyplot as plt
+import matplotlib.style as mplstyle
 
-mpl.style.use('seaborn-paper')
-
-from utils.constants import TRAIN_FILES, TEST_FILES, MAX_SEQUENCE_LENGTH_LIST, NB_CLASSES_LIST
+mplstyle.use('ggplot')
 
 
-def load_dataset_at(index, normalize_timeseries=False, verbose=True) -> (np.array, np.array):
+def load_dataset_at(index, norm_ts=False, verbose=True) -> (np.array, np.array):
     """
     Loads a Univaraite UCR Dataset indexed by `utils.constants`.
 
     Args:
         index: Integer index, set inside `utils.constants` that refers to the
             dataset.
-        normalize_timeseries: Bool / Integer. Determines whether to normalize
+        norm_ts: Bool / Integer. Determines whether to normalize
             the timeseries.
 
             If False, does not normalize the time series.
@@ -29,19 +28,20 @@ def load_dataset_at(index, normalize_timeseries=False, verbose=True) -> (np.arra
         A tuple of shape (X_train, y_train, X_test, y_test, is_timeseries).
         For legacy reasons, is_timeseries is always True.
     """
-    assert index < len(TRAIN_FILES), "Index invalid. Could not load dataset at %d" % index
-    if verbose: print("Loading train / test dataset : ", TRAIN_FILES[index], TEST_FILES[index])
+    assert index < len(META), "Index invalid. Could not load dataset at %d" % index
+    if verbose:
+        print("Loading train / test dataset...")
 
-    if os.path.exists(TRAIN_FILES[index]):
-        df = pd.read_csv(TRAIN_FILES[index], header=None, encoding='latin-1')
+    if os.path.exists(META[index]['TrainPath']):
+        df = pd.read_csv(META[index]['TrainPath'], header=None, encoding='latin-1')
 
-    elif os.path.exists(TRAIN_FILES[index][1:]):
-        df = pd.read_csv(TRAIN_FILES[index][1:], header=None, encoding='latin-1')
+    elif os.path.exists(META[index]['TrainPath'][1:]):
+        df = pd.read_csv(META[index]['TrainPath'][1:], header=None, encoding='latin-1')
 
     else:
-        raise FileNotFoundError('File %s not found!' % (TRAIN_FILES[index]))
+        raise FileNotFoundError('File %s not found!' % (META[index]['TrainPath']))
 
-    is_timeseries = True # assume all input data is univariate time series
+    is_timeseries = True  # assume all input data is univariate time series
 
     # remove all columns which are completely empty
     df.dropna(axis=1, how='all', inplace=True)
@@ -72,10 +72,10 @@ def load_dataset_at(index, normalize_timeseries=False, verbose=True) -> (np.arra
     if is_timeseries:
         X_train = X_train[:, np.newaxis, :]
         # scale the values
-        if normalize_timeseries:
-            normalize_timeseries = int(normalize_timeseries)
+        if norm_ts:
+            norm_ts = int(norm_ts)
 
-            if normalize_timeseries == 2:
+            if norm_ts == 2:
                 X_train_mean = X_train.mean()
                 X_train_std = X_train.std()
                 X_train = (X_train - X_train_mean) / (X_train_std + 1e-8)
@@ -85,15 +85,16 @@ def load_dataset_at(index, normalize_timeseries=False, verbose=True) -> (np.arra
                 X_train_std = X_train.std(axis=-1, keepdims=True)
                 X_train = (X_train - X_train_mean) / (X_train_std + 1e-8)
 
-    if verbose: print("Finished loading train dataset..")
+    if verbose:
+        print("Finished loading train dataset.")
 
-    if os.path.exists(TEST_FILES[index]):
-        df = pd.read_csv(TEST_FILES[index], header=None, encoding='latin-1')
+    if os.path.exists(META[index]['TestPath']):
+        df = pd.read_csv(META[index]['TestPath'], header=None, encoding='latin-1')
 
-    elif os.path.exists(TEST_FILES[index][1:]):
-        df = pd.read_csv(TEST_FILES[index][1:], header=None, encoding='latin-1')
+    elif os.path.exists(META[index]['TestPath'][1:]):
+        df = pd.read_csv(META[index]['TestPath'][1:], header=None, encoding='latin-1')
     else:
-        raise FileNotFoundError('File %s not found!' % (TEST_FILES[index]))
+        raise FileNotFoundError('File %s not found!' % (META[index]['TestPath']))
 
     # remove all columns which are completely empty
     df.dropna(axis=1, how='all', inplace=True)
@@ -124,10 +125,10 @@ def load_dataset_at(index, normalize_timeseries=False, verbose=True) -> (np.arra
     if is_timeseries:
         X_test = X_test[:, np.newaxis, :]
         # scale the values
-        if normalize_timeseries:
-            normalize_timeseries = int(normalize_timeseries)
+        if norm_ts:
+            norm_ts = int(norm_ts)
 
-            if normalize_timeseries == 2:
+            if norm_ts == 2:
                 X_test = (X_test - X_train_mean) / (X_train_std + 1e-8)
             else:
                 X_test_mean = X_test.mean(axis=-1, keepdims=True)
@@ -135,7 +136,7 @@ def load_dataset_at(index, normalize_timeseries=False, verbose=True) -> (np.arra
                 X_test = (X_test - X_test_mean) / (X_test_std + 1e-8)
 
     if verbose:
-        print("Finished loading test dataset..")
+        print("Finished loading test dataset.")
         print()
         print("Number of train samples : ", X_train.shape[0], "Number of test samples : ", X_test.shape[0])
         print("Number of classes : ", nb_classes)
@@ -176,7 +177,7 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
 
     Args:
         dataset_id: Integer id, refering to the dataset set inside
-            `utils/constants.py`.
+            `utils/const.py`.
         seed: Numpy Random seed.
         limit: Number of data points to be visualized. Min of 1.
         cutoff: Optional integer which slices of the first `cutoff` timesteps
@@ -202,8 +203,8 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
 
     if plot_data is None:
         X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(
-                                                               dataset_id,
-                                                               normalize_timeseries=normalize_timeseries)
+            dataset_id,
+            norm_ts=normalize_timeseries)
 
         if not is_timeseries:
             print("Can plot time series input data only!\n"
@@ -212,7 +213,7 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
 
         max_nb_words, sequence_length = calculate_dataset_metrics(X_train)
 
-        if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+        if sequence_length != META[dataset_id]['Length']:
             if cutoff is None:
                 choice = cutoff_choice(dataset_id, sequence_length)
             else:
@@ -239,8 +240,8 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
             test_size = limit
         else:
             assert limit == 1, 'If plotting classwise, limit must be 1 so as to ensure number of samples per class = 1'
-            train_size = NB_CLASSES_LIST[dataset_id] * limit
-            test_size = NB_CLASSES_LIST[dataset_id] * limit
+            train_size = META[dataset_id]['Class'] * limit
+            test_size = META[dataset_id]['Class'] * limit
 
     if not plot_classwise:
         train_idx = np.random.randint(0, X_train.shape[0], size=train_size)
@@ -258,7 +259,7 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
 
         classwise_sample_size_list = [len(x[0]) for x in classwise_train_list]
         size = min(classwise_sample_size_list)
-        train_size = min([train_size // NB_CLASSES_LIST[dataset_id], size])
+        train_size = min([train_size // META[dataset_id]['Class'], size])
 
         for i in range(len(classwise_train_list)):
             classwise_train_idx = np.random.randint(0, len(classwise_train_list[i][0]), size=train_size)
@@ -303,7 +304,7 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
 
         classwise_sample_size_list = [len(x[0]) for x in classwise_test_list]
         size = min(classwise_sample_size_list)
-        test_size = min([test_size // NB_CLASSES_LIST[dataset_id], size])
+        test_size = min([test_size // META[dataset_id]['Class'], size])
 
         for i in range(len(classwise_test_list)):
             classwise_test_idx = np.random.randint(0, len(classwise_test_list[i][0]), size=test_size)
@@ -352,26 +353,26 @@ def plot_dataset(dataset_id, seed=None, limit=None, cutoff=None,
         cols = 2
 
     fig, axs = plt.subplots(rows, cols, squeeze=False,
-                           tight_layout=True, figsize=(8, 6))
+                            tight_layout=True, figsize=(8, 6))
     axs[0][0].set_title('Train dataset', size=16)
     axs[0][0].set_xlabel('timestep')
     axs[0][0].set_ylabel('value')
     train_df.plot(subplots=False,
                   legend='best',
-                  ax=axs[0][0],)
+                  ax=axs[0][0], )
 
     axs[0][1].set_title('Test dataset', size=16)
     axs[0][1].set_xlabel('timestep')
     axs[0][1].set_ylabel('value')
     test_df.plot(subplots=False,
                  legend='best',
-                 ax=axs[0][1],)
+                 ax=axs[0][1], )
 
     if plot_data is not None and X_train_attention is not None:
         columns = ['Class %d' % (i + 1) for i in range(X_train_attention.shape[1])]
         train_attention_df = pd.DataFrame(X_train_attention,
-                            index=range(X_train_attention.shape[0]),
-                            columns=columns)
+                                          index=range(X_train_attention.shape[0]),
+                                          columns=columns)
 
         axs[1][0].set_title('Train %s Sequence' % (type), size=16)
         axs[1][0].set_xlabel('timestep')
@@ -409,7 +410,7 @@ def cutoff_choice(dataset_id, sequence_length):
         String choice of pre or post slicing.
     """
     print("Original sequence length was :", sequence_length, "New sequence Length will be : ",
-          MAX_SEQUENCE_LENGTH_LIST[dataset_id])
+          META[dataset_id]['Length'])
     choice = input('Options : \n'
                    '`pre` - cut the sequence from the beginning\n'
                    '`post`- cut the sequence from the end\n'
@@ -429,16 +430,16 @@ def cutoff_sequence(X_train, X_test, choice, dataset_id, sequence_length):
         X_train: Train sequences.
         X_test: Test sequences.
         choice: User's choice of slicing method.
-        dataset_id: Integer id of the dataset set inside `utils/constants.py`.
+        dataset_id: Integer id of the dataset set inside `utils/const.py`.
         sequence_length: Original length of the sequence.
 
     Returns:
         A tuple of (X_train, X_test) after slicing off the requisit number of
         timesteps.
     """
-    assert MAX_SEQUENCE_LENGTH_LIST[dataset_id] < sequence_length, "If sequence is to be cut, max sequence" \
-                                                                   "length must be less than original sequence length."
-    cutoff = sequence_length - MAX_SEQUENCE_LENGTH_LIST[dataset_id]
+    assert META[dataset_id]['Length'] < sequence_length, "If sequence is to be cut, max sequence" \
+                                                         "length must be less than original sequence length."
+    cutoff = sequence_length - META[dataset_id]['Length']
     if choice == 'pre':
         if X_train is not None:
             X_train = X_train[:, :, cutoff:]
@@ -449,7 +450,7 @@ def cutoff_sequence(X_train, X_test, choice, dataset_id, sequence_length):
             X_train = X_train[:, :, :-cutoff]
         if X_test is not None:
             X_test = X_test[:, :, :-cutoff]
-    print("New sequence length :", MAX_SEQUENCE_LENGTH_LIST[dataset_id])
+    print("New sequence length :", META[dataset_id]['Length'])
     return X_train, X_test
 
 

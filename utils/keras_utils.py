@@ -1,8 +1,6 @@
 import os
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
 from sklearn.preprocessing import LabelEncoder
@@ -15,54 +13,61 @@ from keras.models import Model
 from keras.layers import Permute
 from keras.optimizers import Adam
 from keras.utils import to_categorical
-from keras.preprocessing.sequence import pad_sequences
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
-from keras.wrappers.scikit_learn import KerasClassifier
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, Callback
 from keras import backend as K
+import tqdm
 
-from utils.generic_utils import load_dataset_at, calculate_dataset_metrics, cutoff_choice, \
-    cutoff_sequence, plot_dataset
-from utils.constants import MAX_SEQUENCE_LENGTH_LIST, TRAIN_FILES
+from utils.generic_utils import load_dataset_at, calculate_dataset_metrics, cutoff_choice, cutoff_sequence, plot_dataset
+from utils.const import META
+import matplotlib.pyplot as plt
+import matplotlib.style as mplstyle
 
-mpl.style.use('seaborn-paper')
+import math
+
+mplstyle.use('ggplot')
+
 warnings.simplefilter('ignore', category=DeprecationWarning)
-
 
 if not os.path.exists('weights/'):
     os.makedirs('weights/')
 
 
-def train_model(model: Model, dataset_id, dataset_prefix, epochs=50, batch_size=128, val_subset=None,
-                cutoff=None, normalize_timeseries=False, learning_rate=1e-3):
+class UnifiedProBar(Callback):
+    def __init__(self, total_steps):
+        super().__init__()
+        self.total_steps = total_steps
+        self.progress_bar = tqdm.tqdm(total=total_steps, desc="Training Progress", unit="step")
+
+    def on_batch_end(self, batch, logs=None):
+        # update progress bar after each batch
+        self.progress_bar.update(1)
+        self.progress_bar.set_postfix({
+            "loss": logs.get("loss", 0),
+            "accuracy": logs.get("accuracy", 0),
+        })
+
+    def on_epoch_end(self, epoch, logs=None):
+        # suppress output at the end of each epoch
+        self.progress_bar.set_postfix({
+            "loss": logs.get("loss", 0),
+            "accuracy": logs.get("accuracy", 0),
+        }, refresh=True)
+
+    def on_train_end(self, logs=None):
+        # close the progress bar once training is done
+        self.progress_bar.close()
+
+
+def train(model, dataset_id, dataset_prefix, epochs=50, batch_size=128, val_subset=None,
+          cutoff=None, norm_ts=False, lr=1e-3):
     """
     Trains a provided Model, given a dataset id.
-
-    Args:
-        model: A Keras Model.
-        dataset_id: Integer id representing the dataset index containd in
-            `utils/constants.py`.
-        dataset_prefix: Name of the dataset. Used for weight saving.
-        epochs: Number of epochs to train.
-        batch_size: Size of each batch for training.
-        val_subset: Optional integer id to subset the test set. To be used if
-            the test set evaluation time significantly surpasses training time
-            per epoch.
-        cutoff: Optional integer which slices of the first `cutoff` timesteps
-            from the input signal.
-        normalize_timeseries: Bool / Integer. Determines whether to normalize
-            the timeseries.
-
-            If False, does not normalize the time series.
-            If True / int not equal to 2, performs standard sample-wise
-                z-normalization.
-            If 2: Performs full dataset z-normalization.
-        learning_rate: Initial learning rate.
     """
-    X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      normalize_timeseries=normalize_timeseries)
+    X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id, norm_ts=norm_ts)
     max_nb_words, sequence_length = calculate_dataset_metrics(X_train)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -75,25 +80,18 @@ def train_model(model: Model, dataset_id, dataset_prefix, epochs=50, batch_size=
             X_train, X_test = cutoff_sequence(X_train, X_test, choice, dataset_id, sequence_length)
 
     if not is_timeseries:
-        X_train = pad_sequences(X_train, maxlen=MAX_SEQUENCE_LENGTH_LIST[dataset_id], padding='post', truncating='post')
-        X_test = pad_sequences(X_test, maxlen=MAX_SEQUENCE_LENGTH_LIST[dataset_id], padding='post', truncating='post')
+        X_train = pad_sequences(X_train, maxlen=META[dataset_id]['Length'], padding='post', truncating='post')
+        X_test = pad_sequences(X_test, maxlen=META[dataset_id]['Length'], padding='post', truncating='post')
 
-    classes = np.unique(y_train)
     le = LabelEncoder()
     y_ind = le.fit_transform(y_train.ravel())
-    recip_freq = len(y_train) / (len(le.classes_) *
-                                 np.bincount(y_ind).astype(np.float64))
-    class_weight = recip_freq[le.transform(classes)]
-
-    print("Class weights : ", class_weight)
+    recip_freq = len(y_train) / (len(le.classes_) * np.bincount(y_ind).astype(np.float64))
+    class_weight = {i: recip_freq[i] for i in range(len(recip_freq))}
 
     y_train = to_categorical(y_train, len(np.unique(y_train)))
     y_test = to_categorical(y_test, len(np.unique(y_test)))
 
-    if is_timeseries:
-        factor = 1. / np.cbrt(2)
-    else:
-        factor = 1. / np.sqrt(2)
+    factor = 1. / (np.cbrt(2) if is_timeseries else np.sqrt(2))
 
     path_splits = os.path.split(dataset_prefix)
     if len(path_splits) > 1:
@@ -110,41 +108,39 @@ def train_model(model: Model, dataset_id, dataset_prefix, epochs=50, batch_size=
         if not os.path.exists(all_weights_path):
             os.makedirs(all_weights_path)
 
-    model_checkpoint = ModelCheckpoint("./weights/%s_weights.h5" % dataset_prefix, verbose=1,
+    model_checkpoint = ModelCheckpoint("./weights/%s_weights.h5" % dataset_prefix, verbose=0,
                                        monitor='loss', save_best_only=True, save_weights_only=True)
     reduce_lr = ReduceLROnPlateau(monitor='loss', patience=100, mode='auto',
-                                  factor=factor, cooldown=0, min_lr=1e-4, verbose=2)
+                                  factor=factor, cooldown=0, min_lr=1e-4, verbose=0)
 
-    callback_list = [model_checkpoint, reduce_lr]
-
-    optm = Adam(lr=learning_rate)
-
-    model.compile(optimizer=optm, loss='categorical_crossentropy', metrics=['accuracy'])
+    unified_progress_bar = UnifiedProBar(math.ceil(len(X_train) / batch_size) * epochs)
+    callback_list = [model_checkpoint, reduce_lr, unified_progress_bar]
+    model.compile(optimizer=Adam(learning_rate=lr), loss='categorical_crossentropy', metrics=['accuracy'])
 
     if val_subset is not None:
         X_test = X_test[:val_subset]
         y_test = y_test[:val_subset]
 
     model.fit(X_train, y_train, batch_size=batch_size, epochs=epochs, callbacks=callback_list,
-              class_weight=class_weight, verbose=2, validation_data=(X_test, y_test))
+              class_weight=class_weight, verbose=0, validation_data=(X_test, y_test))
 
 
-def evaluate_model(model: Model, dataset_id, dataset_prefix, batch_size=128, test_data_subset=None,
-                   cutoff=None, normalize_timeseries=False):
+def eval(model: Model, dataset_id, dataset_prefix, batch_size=128, test_data_subset=None,
+         cutoff=None, norm_ts=False):
     """
     Evaluates a given Keras Model on the provided dataset.
 
     Args:
         model: A Keras Model.
-        dataset_id: Integer id representing the dataset index containd in
-            `utils/constants.py`.
+        dataset_id: Integer id representing the dataset index contained in
+            `utils/const.py`.
         dataset_prefix: Name of the dataset. Used for weight saving.
         batch_size: Size of each batch for evaluation.
         test_data_subset: Optional integer id to subset the test set. To be used if
             the test set evaluation time is significantly.
-        cutoff: Optional integer which slices of the first `cutoff` timesteps
+        cutoff: Optional integer which slices of the first `cutoff` time steps
             from the input signal.
-        normalize_timeseries: Bool / Integer. Determines whether to normalize
+        norm_ts: Bool / Integer. Determines whether to normalize
             the timeseries.
 
             If False, does not normalize the time series.
@@ -156,10 +152,10 @@ def evaluate_model(model: Model, dataset_id, dataset_prefix, batch_size=128, tes
         The test set accuracy of the model.
     """
     _, _, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                          normalize_timeseries=normalize_timeseries)
+                                                          norm_ts=norm_ts, verbose=False)
     max_nb_words, sequence_length = calculate_dataset_metrics(X_test)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -172,10 +168,10 @@ def evaluate_model(model: Model, dataset_id, dataset_prefix, batch_size=128, tes
             _, X_test = cutoff_sequence(None, X_test, choice, dataset_id, sequence_length)
 
     if not is_timeseries:
-        X_test = pad_sequences(X_test, maxlen=MAX_SEQUENCE_LENGTH_LIST[dataset_id], padding='post', truncating='post')
+        X_test = pad_sequences(X_test, maxlen=META[dataset_id]['Length'], padding='post', truncating='post')
     y_test = to_categorical(y_test, len(np.unique(y_test)))
 
-    optm = Adam(lr=1e-3)
+    optm = Adam(learning_rate=1e-3)
     model.compile(optimizer=optm, loss='categorical_crossentropy', metrics=['accuracy'])
 
     model.load_weights("./weights/%s_weights.h5" % dataset_prefix)
@@ -196,11 +192,11 @@ def evaluate_model(model: Model, dataset_id, dataset_prefix, batch_size=128, tes
 def loss_model(model: Model, dataset_id, dataset_prefix, batch_size=128, train_data_subset=None,
                cutoff=None, normalize_timeseries=False):
     X_train, y_train, _, _, is_timeseries = load_dataset_at(dataset_id,
-                                                            normalize_timeseries=normalize_timeseries)
+                                                            norm_ts=normalize_timeseries)
 
     y_train = to_categorical(y_train, len(np.unique(y_train)))
 
-    optm = Adam(lr=1e-3)
+    optm = Adam(learning_rate=1e-3)
     model.compile(optimizer=optm, loss='categorical_crossentropy', metrics=['accuracy'])
 
     model.load_weights("./weights/%s_weights.h5" % dataset_prefix)
@@ -230,8 +226,8 @@ def set_trainable(layer, value):
 
     # case: container
     if hasattr(layer, 'layers'):
-        for l in layer.layers:
-            set_trainable(l, value)
+        for ly in layer.layers:
+            set_trainable(ly, value)
 
     # case: wrapper (which is a case not covered by the PR)
     if hasattr(layer, 'layer'):
@@ -252,7 +248,7 @@ def build_function(model, layer_names=None, outputs=None):
     """
     inp = model.input
 
-    if layer_names is not None and (type(layer_names) != list and type(layer_names) != tuple):
+    if layer_names is not None and not isinstance(layer_names, (list, tuple)):
         layer_names = [layer_names]
 
     if outputs is None:
@@ -280,7 +276,8 @@ def get_outputs(model, inputs, eval_functions, verbose=False):
     Returns:
         List of outputs of the Keras Model.
     """
-    if verbose: print('----- activations -----')
+    if verbose:
+        print('----- activations -----')
     outputs = []
     layer_outputs = [func([inputs, 1.])[0] for func in eval_functions]
     for layer_activations in layer_outputs:
@@ -296,7 +293,7 @@ def visualize_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=No
     Args:
         model: an Attention LSTM-FCN Model.
         dataset_id: Integer id representing the dataset index containd in
-            `utils/constants.py`.
+            `utils/const.py`.
         dataset_prefix: Name of the dataset. Used for weight saving.
         batch_size: Size of each batch for evaluation.
         test_data_subset: Optional integer id to subset the test set. To be used if
@@ -320,10 +317,10 @@ def visualize_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=No
     """
 
     X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      normalize_timeseries=normalize_timeseries)
+                                                                      norm_ts=normalize_timeseries)
     _, sequence_length = calculate_dataset_metrics(X_train)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -336,7 +333,7 @@ def visualize_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=No
             X_train, X_test = cutoff_sequence(X_train, X_test, choice, dataset_id, sequence_length)
 
     attn_lstm_layer = [(i, layer) for (i, layer) in enumerate(model.layers)
-                       if layer.__class__.__name__ == 'AttentionLSTM']
+                       if layer.__class__.__name__ == 'ALSTM']
 
     if len(attn_lstm_layer) == 0:
         raise AttributeError('Provided model does not have an Attention layer')
@@ -428,10 +425,10 @@ def write_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=None, 
     """ Same as visualize_context_vector, but writes the context vectors to a file. Unused. """
 
     X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      normalize_timeseries=normalize_timeseries)
+                                                                      norm_ts=normalize_timeseries)
     _, sequence_length = calculate_dataset_metrics(X_train)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -444,7 +441,7 @@ def write_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=None, 
             X_train, X_test = cutoff_sequence(X_train, X_test, choice, dataset_id, sequence_length)
 
     attn_lstm_layer = [(i, layer) for (i, layer) in enumerate(model.layers)
-                       if layer.__class__.__name__ == 'AttentionLSTM']
+                       if layer.__class__.__name__ == 'ALSTM']
 
     if len(attn_lstm_layer) == 0:
         raise AttributeError('Provided model does not have an Attention layer')
@@ -544,8 +541,8 @@ def visualize_cam(model: Model, dataset_id, dataset_prefix, class_id,
 
     Args:
         model: A Keras Model.
-        dataset_id: Integer id representing the dataset index containd in
-            `utils/constants.py`.
+        dataset_id: Integer id representing the dataset index contained in
+            `utils/const.py`.
         dataset_prefix: Name of the dataset. Used for weight saving.
         class_id: Index of the class whose activation is to be visualized.
         cutoff: Optional integer which slices of the first `cutoff` timesteps
@@ -563,10 +560,10 @@ def visualize_cam(model: Model, dataset_id, dataset_prefix, class_id,
     np.random.seed(seed)
 
     X_train, y_train, _, _, is_timeseries = load_dataset_at(dataset_id,
-                                                            normalize_timeseries=normalize_timeseries)
+                                                            norm_ts=normalize_timeseries)
     _, sequence_length = calculate_dataset_metrics(X_train)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -647,10 +644,10 @@ def write_cam(model: Model, dataset_id, dataset_prefix,
     """ Same as visualize_cam, but writes the result data to a file. """
 
     _, _, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                          normalize_timeseries=normalize_timeseries)
+                                                          norm_ts=normalize_timeseries)
     _, sequence_length = calculate_dataset_metrics(X_test)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -723,7 +720,7 @@ def visualize_filters(model: Model, dataset_id, dataset_prefix,
     Args:
         model: A Keras Model.
         dataset_id: Integer id representing the dataset index containd in
-            `utils/constants.py`.
+            `utils/const.py`.
         dataset_prefix: Name of the dataset. Used for weight saving.
         conv_id: Convolution layer ID. Can be 0, 1 or 2 for LSTMFCN and
             its univariate variants (as it uses 3 Conv blocks).
@@ -745,10 +742,10 @@ def visualize_filters(model: Model, dataset_id, dataset_prefix,
     assert conv_id >= 0 and conv_id < 3, "Convolution layer ID must be between 0 and 2"
 
     X_train, y_train, _, _, is_timeseries = load_dataset_at(dataset_id,
-                                                            normalize_timeseries=normalize_timeseries)
+                                                            norm_ts=normalize_timeseries)
     _, sequence_length = calculate_dataset_metrics(X_train)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -833,6 +830,7 @@ def visualize_filters(model: Model, dataset_id, dataset_prefix,
 
     def mjrFormatter(x, pos):
         return '{:.2f}'.format(x)
+
     plt.gca().yaxis.set_major_formatter(FuncFormatter(mjrFormatter))
 
     plt.show()
@@ -846,10 +844,10 @@ def extract_features(model: Model, dataset_id, dataset_prefix,
     assert layer_name in ['cnn', 'lstm', 'lstmfcn']
 
     X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      normalize_timeseries=normalize_timeseries)
+                                                                      norm_ts=normalize_timeseries)
     _, sequence_length = calculate_dataset_metrics(X_train)
 
-    if sequence_length != MAX_SEQUENCE_LENGTH_LIST[dataset_id]:
+    if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
             choice = cutoff_choice(dataset_id, sequence_length)
         else:
@@ -868,7 +866,7 @@ def extract_features(model: Model, dataset_id, dataset_prefix,
 
     lstm_layers = [layer for layer in model.layers
                    if layer.__class__.__name__ == 'LSTM' or
-                   layer.__class__.__name__ == 'AttentionLSTM']
+                   layer.__class__.__name__ == 'ALSTM']
 
     lstmfcn_layer = model.layers[-2]
 
