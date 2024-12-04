@@ -33,6 +33,7 @@ if not os.path.exists('weights/'):
     os.makedirs('weights/')
 
 
+# TODO: fix broken progress bar upon second run; ensure same steps for all datasets
 class UnifiedProBar(Callback):
     def __init__(self, total_steps):
         super().__init__()

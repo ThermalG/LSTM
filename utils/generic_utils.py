@@ -86,7 +86,7 @@ def load_dataset_at(index, norm_ts=False, verbose=True) -> (np.array, np.array):
                 X_train = (X_train - X_train_mean) / (X_train_std + 1e-8)
 
     if verbose:
-        print("Finished loading train dataset.")
+        print("Train dataset loaded.")
 
     if os.path.exists(META[index]['TestPath']):
         df = pd.read_csv(META[index]['TestPath'], header=None, encoding='latin-1')
@@ -136,7 +136,7 @@ def load_dataset_at(index, norm_ts=False, verbose=True) -> (np.array, np.array):
                 X_test = (X_test - X_test_mean) / (X_test_std + 1e-8)
 
     if verbose:
-        print("Finished loading test dataset.")
+        print("Test dataset loaded.")
         print()
         print("Number of train samples : ", X_train.shape[0], "Number of test samples : ", X_test.shape[0])
         print("Number of classes : ", nb_classes)
