@@ -1,29 +1,26 @@
+import math
 import os
-import numpy as np
-import pandas as pd
-from matplotlib.ticker import FuncFormatter
-
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import GridSearchCV, train_test_split
-from skimage.transform import resize
-
 import warnings
 
-from keras.models import Model
-from keras.layers import Permute
-from keras.optimizers import Adam
-from keras.utils import to_categorical
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, Callback
-from keras import backend as K
-import tqdm
-
-from utils.generic_utils import load_dataset_at, calculate_dataset_metrics, cutoff_choice, cutoff_sequence, plot_dataset
-from utils.const import META
+# TODO: get rid of illegal packages (and update requirements.txt)
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
+import numpy as np
+import pandas as pd
+import tqdm
+from matplotlib.ticker import FuncFormatter
+from skimage.transform import resize
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras import backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, Callback
+from tensorflow.keras.layers import Permute
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.utils import to_categorical
 
-import math
+from utils.const import META
+from utils.generic_utils import load_dataset_at, calculate_dataset_metrics, cutoff_choice, cutoff_sequence, plot_dataset
 
 mplstyle.use('ggplot')
 

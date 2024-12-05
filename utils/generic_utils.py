@@ -32,14 +32,14 @@ def load_dataset_at(index, norm_ts=False, verbose=True) -> (np.array, np.array):
     if verbose:
         print("Loading train / test dataset...")
 
-    if os.path.exists(META[index]['TrainPath']):
-        df = pd.read_csv(META[index]['TrainPath'], header=None, encoding='latin-1')
+    if os.path.exists(META[index]['TrnPath']):
+        df = pd.read_csv(META[index]['TrnPath'], header=None, encoding='latin-1')
 
-    elif os.path.exists(META[index]['TrainPath'][1:]):
-        df = pd.read_csv(META[index]['TrainPath'][1:], header=None, encoding='latin-1')
+    elif os.path.exists(META[index]['TrnPath'][1:]):
+        df = pd.read_csv(META[index]['TrnPath'][1:], header=None, encoding='latin-1')
 
     else:
-        raise FileNotFoundError('File %s not found!' % (META[index]['TrainPath']))
+        raise FileNotFoundError('File %s not found!' % (META[index]['TrnPath']))
 
     is_timeseries = True  # assume all input data is univariate time series
 
@@ -88,13 +88,13 @@ def load_dataset_at(index, norm_ts=False, verbose=True) -> (np.array, np.array):
     if verbose:
         print("Train dataset loaded.")
 
-    if os.path.exists(META[index]['TestPath']):
-        df = pd.read_csv(META[index]['TestPath'], header=None, encoding='latin-1')
+    if os.path.exists(META[index]['TstPath']):
+        df = pd.read_csv(META[index]['TstPath'], header=None, encoding='latin-1')
 
-    elif os.path.exists(META[index]['TestPath'][1:]):
-        df = pd.read_csv(META[index]['TestPath'][1:], header=None, encoding='latin-1')
+    elif os.path.exists(META[index]['TstPath'][1:]):
+        df = pd.read_csv(META[index]['TstPath'][1:], header=None, encoding='latin-1')
     else:
-        raise FileNotFoundError('File %s not found!' % (META[index]['TestPath']))
+        raise FileNotFoundError('File %s not found!' % (META[index]['TstPath']))
 
     # remove all columns which are completely empty
     df.dropna(axis=1, how='all', inplace=True)
