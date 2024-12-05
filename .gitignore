@@ -1,0 +1,13 @@
+data/*
+!data/note.md
+weights/*.h5
+weights/*/*.h5
+.idea/
+utils/*.pyc
+layer_features
+cam_features
+lstm_features
+cnn_filters
+qodana.yaml
+UCRArchive_2018.zip
+UCRArchive_2018
