@@ -20,7 +20,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.utils import to_categorical
 
 from utils.const import META
-from utils.generic_utils import load_dataset_at, calculate_dataset_metrics, cutoff_choice, cutoff_sequence, plot_dataset
+from utils.generics import load_dataset, cutoff_choice, cutoff_sequence, plot_dataset
 
 mplstyle.use('ggplot')
 
@@ -62,8 +62,8 @@ def train(model, dataset_id, dataset_prefix, epochs=50, batch_size=128, val_subs
     """
     Trains a provided Model, given a dataset id.
     """
-    X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id, norm_ts=norm_ts)
-    max_nb_words, sequence_length = calculate_dataset_metrics(X_train)
+    X_train, y_train, X_test, y_test = load_dataset(dataset_id, norm_ts=norm_ts)
+    sequence_length = X_train.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -77,10 +77,6 @@ def train(model, dataset_id, dataset_prefix, epochs=50, batch_size=128, val_subs
         else:
             X_train, X_test = cutoff_sequence(X_train, X_test, choice, dataset_id, sequence_length)
 
-    if not is_timeseries:
-        X_train = pad_sequences(X_train, maxlen=META[dataset_id]['Length'], padding='post', truncating='post')
-        X_test = pad_sequences(X_test, maxlen=META[dataset_id]['Length'], padding='post', truncating='post')
-
     le = LabelEncoder()
     y_ind = le.fit_transform(y_train.ravel())
     recip_freq = len(y_train) / (len(le.classes_) * np.bincount(y_ind).astype(np.float64))
@@ -89,7 +85,7 @@ def train(model, dataset_id, dataset_prefix, epochs=50, batch_size=128, val_subs
     y_train = to_categorical(y_train, len(np.unique(y_train)))
     y_test = to_categorical(y_test, len(np.unique(y_test)))
 
-    factor = 1. / (np.cbrt(2) if is_timeseries else np.sqrt(2))
+    factor = 1. / np.cbrt(2)
 
     path_splits = os.path.split(dataset_prefix)
     if len(path_splits) > 1:
@@ -149,9 +145,8 @@ def eval(model: Model, dataset_id, dataset_prefix, batch_size=128, test_data_sub
     Returns:
         The test set accuracy of the model.
     """
-    _, _, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                          norm_ts=norm_ts, verbose=False)
-    max_nb_words, sequence_length = calculate_dataset_metrics(X_test)
+    _, _, X_test, y_test = load_dataset(dataset_id, norm_ts=norm_ts, verbose=False)
+    sequence_length = X_test.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -164,10 +159,6 @@ def eval(model: Model, dataset_id, dataset_prefix, batch_size=128, test_data_sub
             return
         else:
             _, X_test = cutoff_sequence(None, X_test, choice, dataset_id, sequence_length)
-
-    if not is_timeseries:
-        X_test = pad_sequences(X_test, maxlen=META[dataset_id]['Length'], padding='post', truncating='post')
-    y_test = to_categorical(y_test, len(np.unique(y_test)))
 
     optm = Adam(learning_rate=1e-3)
     model.compile(optimizer=optm, loss='categorical_crossentropy', metrics=['accuracy'])
@@ -189,8 +180,7 @@ def eval(model: Model, dataset_id, dataset_prefix, batch_size=128, test_data_sub
 
 def loss_model(model: Model, dataset_id, dataset_prefix, batch_size=128, train_data_subset=None,
                cutoff=None, normalize_timeseries=False):
-    X_train, y_train, _, _, is_timeseries = load_dataset_at(dataset_id,
-                                                            norm_ts=normalize_timeseries)
+    X_train, y_train, _, _ = load_dataset(dataset_id, norm_ts=normalize_timeseries)
 
     y_train = to_categorical(y_train, len(np.unique(y_train)))
 
@@ -314,9 +304,8 @@ def visualize_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=No
             such cases.
     """
 
-    X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      norm_ts=normalize_timeseries)
-    _, sequence_length = calculate_dataset_metrics(X_train)
+    X_train, y_train, X_test, y_test = load_dataset(dataset_id, norm_ts=normalize_timeseries)
+    sequence_length = X_train.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -422,9 +411,8 @@ def write_context_vector(model: Model, dataset_id, dataset_prefix, cutoff=None, 
                          normalize_timeseries=False, visualize_sequence=True, visualize_classwise=False):
     """ Same as visualize_context_vector, but writes the context vectors to a file. Unused. """
 
-    X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      norm_ts=normalize_timeseries)
-    _, sequence_length = calculate_dataset_metrics(X_train)
+    X_train, y_train, X_test, y_test = load_dataset(dataset_id, norm_ts=normalize_timeseries)
+    sequence_length = X_train.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -557,9 +545,8 @@ def visualize_cam(model: Model, dataset_id, dataset_prefix, class_id,
 
     np.random.seed(seed)
 
-    X_train, y_train, _, _, is_timeseries = load_dataset_at(dataset_id,
-                                                            norm_ts=normalize_timeseries)
-    _, sequence_length = calculate_dataset_metrics(X_train)
+    X_train, y_train, _, _ = load_dataset(dataset_id, norm_ts=normalize_timeseries)
+    sequence_length = X_train.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -641,9 +628,8 @@ def write_cam(model: Model, dataset_id, dataset_prefix,
               cutoff=None, normalize_timeseries=False):
     """ Same as visualize_cam, but writes the result data to a file. """
 
-    _, _, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                          norm_ts=normalize_timeseries)
-    _, sequence_length = calculate_dataset_metrics(X_test)
+    _, _, X_test, y_test = load_dataset(dataset_id, norm_ts=normalize_timeseries)
+    sequence_length = X_test.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -739,9 +725,8 @@ def visualize_filters(model: Model, dataset_id, dataset_prefix,
 
     assert conv_id >= 0 and conv_id < 3, "Convolution layer ID must be between 0 and 2"
 
-    X_train, y_train, _, _, is_timeseries = load_dataset_at(dataset_id,
-                                                            norm_ts=normalize_timeseries)
-    _, sequence_length = calculate_dataset_metrics(X_train)
+    X_train, y_train, _, _ = load_dataset(dataset_id, norm_ts=normalize_timeseries)
+    sequence_length = X_train.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
@@ -841,9 +826,8 @@ def extract_features(model: Model, dataset_id, dataset_prefix,
     layer_name = layer_name.lower()
     assert layer_name in ['cnn', 'lstm', 'lstmfcn']
 
-    X_train, y_train, X_test, y_test, is_timeseries = load_dataset_at(dataset_id,
-                                                                      norm_ts=normalize_timeseries)
-    _, sequence_length = calculate_dataset_metrics(X_train)
+    X_train, y_train, X_test, y_test = load_dataset(dataset_id, norm_ts=normalize_timeseries)
+    sequence_length = X_train.shape[-1]
 
     if sequence_length != META[dataset_id]['Length']:
         if cutoff is None:
