@@ -161,7 +161,7 @@ def eval(model: Model, dataset_id, dataset_prefix, batch_size=128, test_data_sub
             _, X_test = cutoff_sequence(None, X_test, choice, dataset_id, sequence_length)
 
     optm = Adam(learning_rate=1e-3)
-    model.compile(optimizer=optm, loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=optm, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
     model.load_weights("./weights/%s_weights.h5" % dataset_prefix)
     print("Weights loaded from ", "./weights/%s_weights.h5" % dataset_prefix)
